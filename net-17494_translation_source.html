@@ -1,0 +1,453 @@
+<h1>Learn to Create Interactive Drill-Down Dashboards with PHP and FusionCharts</h1>
+
+<p>This tutorial will teach you how to easily create drill-down charts in PHP using the <a href="http://www.fusioncharts.com/docs/?FirstChart/LinkedCharts.html">LinkedCharts</a> feature of FusionCharts.</p>
+
+<p><!--more--></p>
+
+
+
+<h2>Introduction</h2>
+
+<p>Presenting data in a graphical format always helps a lot in parsing the data efficiently. If the charts are interactive and linked, that's even better. </p>
+
+<blockquote>
+  <p>Drill-down charts allow you to convert individual data plots (columns in column chart, pie slices in pie chart etc) of a chart into hotspots (or links). </p>
+</blockquote>
+
+<p>These items, when clicked, can open new charts and you can navigate between these charts easily. </p>
+
+
+
+<h2>What are Linked Charts</h2>
+
+<blockquote class="pullquote pqRight">
+  <p>Linked charts are a new and smart drill-down feature introduced in FusionCharts v3.2</p>
+</blockquote>
+
+<p>Untiil now, these charts had individual data streams and were not completely tied together. What if all this data could be in one data stream and we could browse through these charts back and forth? Well, that's exactly what <em>LinkedCharts</em> does. It's a new and smart drill-down feature introduced in FusionCharts v3.2, that allows you to create unlimited levels of drill-down charts using a  single data source. All the links originate from a parent chart and its respective data.</p>
+
+<p>In this tutorial, we are going to take a practical look at integrating a chart with a sample application. The MySQL database will contain the data -- a little PHP will work as an intermediary to fetch and process the data -- and FusionCharts will handle the process of displaying the charts</p>
+
+<div class="tutorial_image">
+  <img src="http://cdn.tutsplus.com/net/uploads/legacy/895_linkedCharts/mysql-php-fc.png" data-original-url="http://nettuts.s3.amazonaws.com/895_linkedCharts/mysql-php-fc.png" alt="Data flow" border="0"/>
+</div>
+
+<p>To learn more about LinkedCharts and drill-down charts, <a href="http://kb.fusioncharts.com/questions/459/What+is+a+Drill-down+chart?">take a look here</a>. To briefly sum it up:</p>
+
+<ul>
+  <li>Drill-down charts display data with the same settings as the parent chart by default.</li>
+  <li>Additional configuration can also be done per drill-down level. You can change chart type and settings at each level of drill-down.</li>
+  <li>Open links in a separate HTML container, jQuey dialog, lightbox, extJS window and more.</li>
+  <li>Extensive events support using Javascript.</li>
+</ul>
+
+
+
+<h2>What are We Building?</h2>
+
+<p>Often times, we come across a situation where we want to monitor the growth of new users on our website. With that in mind, let's make a small application that will show the number of registered users monthly / daily / hourly. Or, in simpler terms: how many users signed up in a given period of time? </p>
+
+<blockquote>
+  <p>We'll make a simple bar chart, which is linked in such a way so that, initially, a monthly chart is shown. When someone clicks on one of the monthly bars, it changes to the daily chart, and again, subsequently, to the daily chart.</p>
+</blockquote>
+
+
+
+<h2>Requirements</h2>
+
+<ul>
+  <li>Any web server running PHP.</li>
+  <li>MySQL database server, though, you can use any database of your choice.</li>
+  <li><a href="http://www.fusioncharts.com/">FusionCharts</a>. If you do not have it, you can download an evaluation copy or buy it. </li>
+</ul>
+
+
+
+<h2><span>Step 0:</span> Initial Setup</h2>
+
+<ul>
+  <li>Create an empty database, named <code>fctutorial</code>. You can also use an existing database, but be careful of overwriting tables.</li>
+  <li>Create an empty folder <code>fcdemo</code> in your web-server's root directory (usually www). </li>
+</ul>
+
+
+
+<h2><span>Step 1:</span> Preparing the Database</h2>
+
+<p>To keep it simple, we will use one table, <code>users</code>, which will contain the user information. We are only interested in the signup time of the users (the time they registered). So, we will create a table with only that information. Use the following SQL query to do so. </p>
+
+<pre class="brush: sql">
+CREATE TABLE `users`
+(
+  `ID` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `Time` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+  PRIMARY KEY (`ID`),
+  KEY `Time` (`Time`)
+)</pre>
+
+<p>We have created a table with two fields: <code>ID</code> and   <code>time</code>. This time field contains the signup time of the users. Note that we have applied an <code>INDEX</code> on the time field, because we will be doing a lot of <code>WHERE</code> clause operations on it. Indexing helps performance in these situations.</p>
+
+<h3>Connect to the Database</h3>
+
+<p>Let's write a quick and small script that will help us to connect to database. </p>
+
+<pre class="brush: php">&lt;?php
+$db_host = 'localhost';
+$db_database = 'fctutorial';
+$db_username = 'root';
+$db_password = '';
+  
+if ( ! mysql_connect($db_host, $db_username, $db_password))
+    die ("Could not connect to the database server.");
+if ( ! mysql_select_db($db_database))
+    die ("Could not select the database.");
+?&gt;</pre>
+
+<p>Change the database credentials according to your own settings. Next, save this file as <code>connect-to-database.php</code> in the <code>fcdemo</code> folder we created.</p>
+
+<h3>Inserting Sample Data</h3>
+
+<p>In a real world application, the <code>users </code>table will be populated over time. But, for demonstration purpose, we need to have some data in it. Let's use a simple script to insert some random data into the table. Don't worry if you don't understand the following code; it's not essential to this tutorial. </p>
+
+<pre class="brush: php">
+&lt;?php
+//Connect to database
+require 'connect-to-database.php';
+
+//Set variables
+$MinTime = strtotime('2010-01-01');
+$MaxTime = strtotime('2010-12-12');
+$RecordsToInsert = 10000;
+
+//Generate random time and insert records
+for($i = 0; $i &lt; $RecordsToInsert; $i++)
+{
+	$RandomTime = rand($MinTime, $MaxTime);
+	mysql_query("INSERT INTO `users` (Time) VALUES (FROM_UNIXTIME({$RandomTime}))") or die(mysql_error());
+}
+
+//Completed
+echo "Inserted {$RecordsToInsert} records.";
+?&gt;</pre>
+
+<p>Save this file as <code>generate-random-data.php</code> in the <code>fcdemo</code> folder.</p>
+
+<p><strong>First</strong>,  we connect to the database using the small script we wrote, then we set the minimum and maximum time from which randomly a time will be picked and inserted into the users table. Also, you can change the number of records to insert by changing <code>$RecordsToInsert</code>.</p>
+
+<p><strong>Next</strong>, we run this script to insert the data into the database. To do so, open your web browser and go to this URL :<em>http://localhost/fcdemo/generate-random-data.php</em>.</p>
+
+<p>
+You should see <code>Inserted 10000 records</code> as the output. </p>
+
+
+
+<h2><span>Step 2:</span> Preparing the Skeleton HTML</h2>
+
+<p>Now, the actual process begins. We will create a basic HTML page that will hold the area where the chart will be shown. Here's the basic HTML markup we will be using:</p>
+
+<pre class="brush: html">
+&lt;html&gt;
+  &lt;head&gt;
+&lt;title&gt;FusionCharts v3.2 - LinkedCharts with PHP Demo&lt;/title
+    &lt;script type="text/javascript" src="Charts/FusionCharts.js"&gt;&lt;/script&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div id="chartContainer"&gt;FusionCharts will load here&lt;/div&gt;
+    &lt;script type="text/javascript"&gt;&lt;!--
+      var myChart = new FusionCharts( "Charts/Column3D.swf", "myChartId", "800", "400");
+      myChart.setXMLUrl( "get-data.php?year=2010" );
+      myChart.render( "chartContainer" );
+      // --&gt;
+    &lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</pre>
+
+<p>Save this file as <code>demo.html</code>. What we have done is:</p>
+
+<ul>
+  <li>In  <code>&lt;head&gt;</code>, we have imported the JavaScript file that is supplied with FusionCharts as <code>FusionCharts.js</code>. You can find it in the <em>Charts</em> folder in the FusionCharts zip file.</li>
+  <li>In the <code>&lt;body&gt;</code>, we have created a <code>&lt;div&gt;</code> element which will hold the chart.</li>
+  <li>Finally, we have written a small JavaScript snippet that essentially creates a FusionChart object with the following parameters:
+<strong>a)</strong> <code>Charts/Column3D.swf</code> specifies the FusionCharts chart SWF file to be used. For this demo, we are using the Column3D chart.
+<strong>b)</strong> <code>myChartId</code> tells the internal ID of the chart. This is helpful if we are creating more than one chart and need to reference them later.
+<strong>c)</strong> The next two parameters, <code>800</code> and <code>400</code>, are the width and height of the chart.
+  </li>
+  <li>The <code>myChart.setXMLUrl( "get-data.php?year=2010" );</code> bit defines the data source. Here, we tell it that the chart data will be XML and the URL of the data is <code>get-data.php?year=2010</code>. The <code>get-data.php</code> is the script we will be writing in the next section.</li>
+</ul>
+
+<p>So, we have used two files from the FusionCharts package. You need to copy and past them in the <code>fcdemo/Charts</code> folder to make our app work.</p>
+
+
+
+<h2><span>Step 3:</span> Writing the Backend </h2>
+
+<p>FusionCharts requires a source data in XML or JSON format. Let's use the well-known XML data format, for this particular demo. The data file can contain  both data for plotting, and   cosmetic/functional configuration for the chart. Our objective is to create PHP code that can read the data from the database and generate an XML file like so:  </p>
+
+<pre class="brush: xml">
+&lt;chart caption="Monthly New Users for the Year: 2010" xAxisName="Months" yAxisName="Users" showNames="1" bgColor="E6E6E6,F0F0F0" bgAlpha="100,50" bgRatio="50,100" bgAngle="270" showBorder="1" borderColor="AAAAAA" baseFontSize="12"&gt;
+	&lt;set value="486" name="1"/&gt;
+	&lt;set value="443" name="2"/&gt;
+	&lt;set value="553" name="3"/&gt;
+	&lt;set value="550" name="4"/&gt;
+	&lt;set value="634" name="5"/&gt;
+	&lt;set value="622" name="6"/&gt;
+	&lt;set value="710" name="7"/&gt;
+	&lt;set value="772" name="8"/&gt;
+	&lt;set value="850" name="9"/&gt;
+	&lt;set value="1044" name="10"/&gt;
+	&lt;set value="1175" name="11"/&gt;
+	&lt;set value="761" name="12"/&gt;
+&lt;/chart&gt;</pre>
+
+<p>The XML is simply an XMLized version of data as normally shown in tabular format. The <code>chart</code> tag encapsulates all the data. The attributes in the opening tag here specify a few of the many possible disaply options, which instructs the underlying SWF file how to show the data. Here, we have specified the X and Y axis names, background colors, etc.</p>
+
+<p>So, we will create the <code>get-data.php</code> file that will query the database for users, parse the results and create the XML file. </p>
+
+<pre class="brush: php">
+&lt;?php
+//Sanitizing the input
+$Year 	= intval($_GET['year']);
+
+//Query to get users count for the give year.
+$Query = "SELECT MONTH(Time) AS Value, COUNT(*) AS Total FROM `users` WHERE YEAR(Time)={$Year} GROUP BY Value";
+
+// fill the Result array with 0 values for each month
+$ResultArray = array_fill(1, 12, 0);
+
+// Prepare Chart Heading and X-AXIS label.
+$ChartHeading = 'Monthly New Users for the Year: '.$Year;
+$XaxisName = 'Months';
+
+//Connect to database
+require 'connect-to-database.php';
+
+//Query the database
+$QueryResult = mysql_query($Query);
+
+//Fetch results in the Result Array
+while($Row = mysql_fetch_assoc($QueryResult))
+	$ResultArray[$Row['Value']]=$Row['Total'];
+
+//Generate Chart XML: Head Part
+$Output = '&lt;chart caption="'.$ChartHeading.'" xAxisName="'.$XaxisName.'" yAxisName="Users" showNames="1" bgColor="E6E6E6,F0F0F0" bgAlpha="100,50" bgRatio="50,100" bgAngle="270" showBorder="1" borderColor="AAAAAA" baseFontSize="12"&gt;';
+
+//Generate Chart XML: Main Body
+foreach($ResultArray as $key =&gt; $val)  // key is month number (1-12)
+	$Output .= '&lt;set value="'.$val.'" name="'.$key.'"/&gt;';
+
+//Generate Chart XML: Last Part
+$Output .= '&lt;/chart&gt;';
+
+//Set the output header to XML
+header('Content-type: text/xml');
+
+//Send output
+echo $Output;
+?&gt;</pre>
+
+<p>Save this file as <code>get-data.php</code>. Let's go over the code, bit by bit:</p>
+
+<ul>
+  <li> We sanitize and pass the value of <code>$_GET['year']</code> in the  <code>$Year</code> variable.</li>
+  <li> The query we are using is a simple query that counts the number of users registered, filtered by the <code>WHERE </code>clause to only users that were registered in the year passed by <code>$Year</code>. The result is <code>GROUP BY</code>-  the value which is numeric.</li>
+  <li>Next, we prepare <code>$ResultArray</code> by filling it with 0 values for 1 to 12 keys. You'll learn shortly why we do this.</li>
+  <li> We store the heading of the chart and the X-Axis label in appropriate variables.</li>
+  <li> We call our database script and perform the actual query on the database.</li>
+  <li>Next, we fetch the results, row by row, and insert the data into an array. As the SQL query does not return rows which have no number of users, we want 0 to appear here. That's why we pre-filled  <code>$ResultArray</code> with zeroes. This also assists us when automatically pre-sorting the array.</li>
+  <li> The next line of code deals with the process of creating the head section of the XML. The caption is set as <code>$ChartHeading</code>,  which will serve as the heading of the chart. X and Y axis label are also set along with some color and formatting attributes.</li>
+  <li> Now, the main body of the XML file is prepared and stored in the <code>$Output</code> variable. It's nothing but the simple name and value attributes in the  &lt;code&gt;&lt;set&gt; tag .</li>
+  <li> To complete the XML output, we close the  <code>&lt;chart&gt; </code> tag.</li>
+  <li> As our output is XML, we set the content-type header as XML and echo the contents of our output variable.</li>
+</ul>
+
+<p>Let's see what XML is generated by this code. Open your web browser and visit
+<code>http://localhost/fcdemo/get-data.php?year=2010</code>.</p>
+
+<p>
+You should see XML data, with contents similar to what was shown at the beginning of this step.</p>
+
+<h3>Test it Out</h3>
+
+<p>Now that everything has been created, let's test out what we've created. Open your web browser and go to <em>  http://localhost/fcdemo/demo.html</em>.</p>
+
+<p>If you have followed everything correctly, you will see a working column3D chart with the monthly data.</p>
+
+<div class="tutorial_image">
+  <img src="http://cdn.tutsplus.com/net/uploads/legacy/895_linkedCharts/monthlyData.jpg" data-original-url="http://nettuts.s3.amazonaws.com/895_linkedCharts/monthlyData.jpg" alt="Monthly Data"/>
+</div>
+
+
+
+<h2><span>Step 4:</span> Converting it to a Drill-Down Chart with LinkedCharts</h2>
+
+<blockquote class="pullquote">
+  <p>Our real objective today is to make our chart clickable, so that when someone clicks on any of the bars within the graph, the chart transitions, accordingly, to the daily chart. </p>
+</blockquote>
+
+<p>There are two required methods to embed the child charts data into parent charts. We can  append either the whole <code>data string</code> or just the <code>data URL</code> for all the child charts within the parent data source. If <code>data string</code> is used, the data for each descendant chart is embedded within the parent data source and linked using unique data identifiers. However, as in our case, there are many possible child charts (12 months x 30 days x 24 hours). In our case, we will use the data URL method. This way, we only need to link the data URL to the hotspots (the points which can be clicked, e.g. the bars in our chart).</p>
+
+<h3>Modifying the PHP Code:</h3>
+
+<p>As we need the PHP code to fetch and generate XML for three kinds of chart: <strong>monthly, daily</strong> and <strong>hourly</strong>, we need to modify our existing code. Let's see the code first, and then we will dissect it piece by piece:</p>
+
+<pre class="brush: php">
+&lt;?php
+//Sanitizing the input
+$Type  = $_GET['type'];
+$Year  = intval($_GET['year']);
+$Month = intval($_GET['month']);
+$Day   = intval($_GET['day']);
+
+//Months Names
+$MonthsNames = array(null, 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec');
+
+//Prepare variables according to type-of-chart
+switch($Type)
+{
+	default:
+	case 'monthly':
+		$Query = "SELECT MONTH(Time) AS Value, COUNT(*) AS Total FROM `users` WHERE YEAR(Time)={$Year} GROUP BY Value";
+		$ResultArray = array_fill(1, 12, 0); // fill the Result array with 0 values for each month
+		$ChartHeading = 'Monthly New Users for the Year: '.$Year;
+		$XaxisName = 'Months';
+		break;
+		
+	case 'daily':
+		$Query = "SELECT DAY(Time) AS Value, count(*) AS Total FROM `users` WHERE YEAR(Time)={$Year} AND MONTH(Time)={$Month} GROUP BY Value";
+		$ResultArray = array_fill(1, 31, 0);  // fill the Result array with 0 values for each day
+		$ChartHeading = 'Daily New Users for the Month: '.$MonthsNames[$Month].'/'.$Year;
+		$XaxisName = 'Days';
+		break;
+		
+	case 'hourly':
+		$Query = "select HOUR(Time) AS Value, count(*) AS Total FROM `users` WHERE YEAR(Time)={$Year} AND MONTH(Time)={$Month} AND DAY(Time)={$Day} GROUP BY Value";
+		$ResultArray = array_fill(0, 24, 0);   // fill the Result array with 0 values for each hour
+		$ChartHeading = 'Hourly New Users for the Date: '.$Day.'/'.$MonthsNames[$Month].'/'.$Year;
+		$XaxisName = 'Hours';
+		break;
+}
+
+//Connect to database
+require 'connect-to-database.php';
+
+//Query the database
+$QueryResult = mysql_query($Query);
+
+//Fetch results in the Result Array
+while($Row = mysql_fetch_assoc($QueryResult))
+	$ResultArray[$Row['Value']]=$Row['Total'];
+
+//Generate Chart XML: Head Part
+$Output = '&lt;chart caption="'.$ChartHeading.'" xAxisName="'.$XaxisName.'" yAxisName="Users" showNames="1" bgColor="E6E6E6,F0F0F0" bgAlpha="100,50" bgRatio="50,100" bgAngle="270" showBorder="1" borderColor="AAAAAA" baseFontSize="12"&gt;';
+
+//Generate Chart XML: Main Body
+switch($Type)
+{
+	default:
+	case 'monthly':
+		foreach($ResultArray as $MonthNumber =&gt; $value)  // MonthNumber is month number (1-12)
+			$Output .= '&lt;set value="'.$value.'" name="'.$MonthsNames[$MonthNumber].'" link="newchart-xmlurl-get-data.php?type=daily&amp;year='.$Year.'&amp;month='.$MonthNumber.'"/&gt;';
+		break;
+	case 'daily':
+		foreach($ResultArray as $DayNumber =&gt; $value)  // DayNumber is day (1-31)
+			$Output .= '&lt;set value="'.$value.'" name="'.$DayNumber.'" link="newchart-xmlurl-get-data.php?type=hourly&amp;year='.$Year.'&amp;month='.$Month.'&amp;day='.$DayNumber.'"/&gt;';
+		break;
+	case 'hourly':
+		foreach($ResultArray as $HourNumber =&gt; $value)  // HourNumber is hour (0-23)
+			$Output .= '&lt;set value="'.$value.'" name="'.$HourNumber.'"/&gt;';
+		break;
+}
+
+//Generate Chart XML: Last Part
+$Output .= '&lt;/chart&gt;';
+
+//Set the output header to XML
+header('Content-type: text/xml');
+
+//Send output
+echo $Output;
+?&gt;</pre>
+
+<p>Now, to understand the changes:</p>
+
+<ul>
+  <li>As earlier, we are sanitizing the input. Now, we have three kinds of charts, so the <code>GET</code> variable will tell us the kind of chart requested. It can be either monthly, daily or hourly. Similarly, we have <code>$Month</code> and <code>$Hour</code>, in addition to <code>$Year</code>.</li>
+  <li>Next, we create an array of <code>$MonthNames</code> that will help us when converting the month number to its respective name easily. As an array is zero-based, and a month starts with 1, we set the first array item to null.</li>
+  <li>Now, depending on the type,  the value of the <code>$Query, $ResultArray, $ChartHeading </code>and <code>$XAsixName</code> variables are set, using the <code>switch</code> statement. If <code>$Type</code> is undefined, the default case selects the monthly chart.
+</li>
+  <li>Next, we connect to the database, execute the query, fetch the results in the <code>$ResultArray</code>, and generate the first part of the XML file.</li>
+  <li>The main body of the XML is generated next. However, as it depends on the chart type, we have another switch statement. The real difference lies here:
+<ul>
+<li style="margin-top: 10px;"><strong>Monthly</strong>: Everything is the same, except for the link attribute. The link has the structure: <code>newchart-xmlurl-get-data.php</code>. Here, <code>newchart</code> denotes that a new chart will be created. <code>xmlurl</code> denotes that the data for the new chart is to be fetched from a URL (called the <code>data URL</code>). Whatever comes next becomes the part of this URL. The full link for the January bar becomes: <code>newchart-xmlurl-get-data.php?type=hourly&amp;Year=2010&amp;Month=1</code></li>
+<li><strong>Daily</strong>: It follows the same structure as the monthly part above. The link attribute now has a URL that has a variable for the day along with others.</li>
+<li><strong>Hourly</strong>: As we do not want hourly chart to be clickable, the link attribute is not used here.</li>
+</ul>
+</li>
+  <li>Finally, the <code>&lt;chart&gt;</code> tag is closed and the XML header is sent.</li>
+</ul>
+
+<p>Save the file as <code>get-data.php</code>. Now, open your web-browser and check if everything is working correctly. Go to <em>http://localhost/fcdemo/get-data.php?year=2010</em>.</p>
+
+<p>
+You should see XML data similar to this:</p>
+
+<pre class="brush: xml">
+&lt;chart caption="Monthly New Users for the Year: 2010" xAxisName="Months" yAxisName="Users" showNames="1" bgColor="E6E6E6,F0F0F0" bgAlpha="100,50" bgRatio="50,100" bgAngle="270" showBorder="1" borderColor="AAAAAA" baseFontSize="12"&gt;
+	&lt;set value="486" name="Jan" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=1"/&gt;
+	&lt;set value="443" name="Feb" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=2"/&gt;
+	&lt;set value="553" name="Mar" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=3"/&gt;
+	&lt;set value="550" name="Apr" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=4"/&gt;
+	&lt;set value="634" name="May" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=5"/&gt;
+	&lt;set value="622" name="Jun" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=6"/&gt;
+	&lt;set value="710" name="Jul" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=7"/&gt;
+	&lt;set value="772" name="Aug" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=8"/&gt;
+	&lt;set value="850" name="Sep" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=9"/&gt;
+	&lt;set value="1044" name="Oct" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=10"/&gt;
+	&lt;set value="1175" name="Nov" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=11"/&gt;
+	&lt;set value="761" name="Dec" link="newchart-xmlurl-get-data.php?type=daily&amp;year=2010&amp;month=12"/&gt;
+&lt;/chart&gt;</pre>
+
+<h3>Test it out</h3>
+
+<p>Now that we have modified it, let's test out what we have created. Open your web browser and go to <em>http://localhost/fcdemo/demo.html</em>.</p>
+
+<p>If you have followed the steps above correctly, you will see a working Column3D chart. When any of the monthly bars is clicked, the chart will transition to a daily chart for selected month. Subsequently, the same applies to the days as well.</p>
+
+<blockquote>
+  <p>A nifty added feature is that you can use the back button of your browser to return to the previous chart. </p>
+</blockquote>
+
+<div class="tutorial_image">
+  <img src="http://cdn.tutsplus.com/net/uploads/legacy/895_linkedCharts/daily-chart.png" data-original-url="http://nettuts.s3.amazonaws.com/895_linkedCharts/daily-chart.png" alt="Daily Chart Output" border="0"/>
+</div>
+
+
+
+<h2>The Result</h2>
+
+<p>Here is a video which details how our completed application should look:</p>
+
+<div class="tutorial_image">
+  <object classid="clsid:d27cdb6e-ae6d-11cf-96b8-444553540000" codebase="http://download.macromedia.com/pub/shockwave/cabs/flash/swflash.cab#version=9,0,115,0" width="560" height="345">
+    <param name="movie" value="http://screenr.com/Content/assets/screenr_1116090935.swf"/>
+    <param name="flashvars" value="i=146723"/>
+    <param name="allowFullScreen" value="true"/>
+    <embed src="http://screenr.com/Content/assets/screenr_1116090935.swf" flashvars="i=146723" allowfullscreen="true" width="560" height="345" pluginspage="http://www.macromedia.com/go/getflashplayer"/>
+  </object>
+</div>
+
+
+
+<h2> Conclusion: Extend &amp; Experminent</h2>
+
+<p>If you followed this tutorial all the way through, you should now have a decent understanding of what it takes to create a simple LinkedCharts web application with PHP/MySQL. Similar charts and dashboards can be made for:</p>
+
+<ul>
+  <li> How many products sold over a period of time?</li>
+  <li>How many times your website went down?</li>
+  <li>How many times a particular web page was accessed?</li>
+</ul>
+
+<p>The basic structure is the same for each of these scenarious: have a <code>Time</code> field in your table, and use that data to build the XML. Finally, fetch this XML to the chart. </p>
+
+<p>Take a look at some of these <a href="http://www.fusioncharts.com/LiveDemos.asp">stunning dashboard demos</a> for more inspiration. Thank you for reading, and, if  you have any questions or comments about this tutorial, please post! </p>
